@@ -102,12 +102,43 @@ def handle_comment(comment_data: dict):
         logger.info("No link configured for media_id %s - skipping DM", media_id)
         return
 
+    if not is_follower(commenter_id):
+        logger.info("Commenter %s is not a follower - skipping DM", commenter_id)
+        return
+
     dm_text = post.get('message') or "Thanks for your comment! Here's the link:"
     link = post.get('link', '')
     full_message = f"{dm_text}\n{link}".strip()
 
     send_dm(commenter_id, full_message)
     logger.info("Sent DM to %s for media %s (comment %s)", commenter_id, media_id, comment_id)
+
+
+def is_follower(user_id: str) -> bool:
+    """
+    Checks whether the given Instagram user follows our account.
+    NOTE: The Instagram Graph API does not provide a direct "is this person
+    following me" lookup for arbitrary users. This uses the conversation
+    participant field as a best-effort proxy where available. If your app's
+    permissions don't support this check, it will log the API response and
+    default to NOT sending the DM (fails safe/closed) - see logs to confirm
+    whether this is working for your account.
+    """
+    url = f"{GRAPH_API_BASE}/{user_id}"
+    params = {
+        "fields": "is_user_follow_business",
+        "access_token": PAGE_ACCESS_TOKEN
+    }
+    try:
+        resp = requests.get(url, params=params, timeout=10)
+        if resp.status_code != 200:
+            logger.warning("Follower check failed for %s: %s - %s", user_id, resp.status_code, resp.text)
+            return False
+        data = resp.json()
+        return bool(data.get('is_user_follow_business', False))
+    except Exception:
+        logger.exception("Exception while checking follower status for %s", user_id)
+        return False
 
 
 def send_dm(recipient_id: str, message_text: str):
